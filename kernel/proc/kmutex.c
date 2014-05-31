@@ -15,7 +15,11 @@
 void
 kmutex_init(kmutex_t *mtx)
 {
-        NOT_YET_IMPLEMENTED("PROCS: kmutex_init");
+	/* initialize the wait queue */
+	sched_queue_init(&mtx->km_waitq);
+
+	/* initialize the holding thread to null */
+	mtx->km_holder = NULL;
 }
 
 /*
@@ -27,7 +31,16 @@ kmutex_init(kmutex_t *mtx)
 void
 kmutex_lock(kmutex_t *mtx)
 {
-        NOT_YET_IMPLEMENTED("PROCS: kmutex_lock");
+	/* ensure relock is not being attempted */
+	KASSERT(mtx->km_holder != curthr);
+
+	/* wait if mutex is already locked */
+	if (mtx->km_holder != NULL)
+		sched_sleep_on(&mtx->km_waitq);
+
+	/* give the current thread the mutex */
+	else
+		mtx->km_holder = curthr;
 }
 
 /*
@@ -37,7 +50,16 @@ kmutex_lock(kmutex_t *mtx)
 int
 kmutex_lock_cancellable(kmutex_t *mtx)
 {
-        NOT_YET_IMPLEMENTED("PROCS: kmutex_lock_cancellable");
+	/* ensure relock is not being attempted */
+	KASSERT(mtx->km_holder != curthr);
+
+	/* wait if mutex is already locked */
+	if (mtx->km_holder != NULL)
+		return sched_cancellable_sleep_on(&mtx->km_waitq);
+
+	/* give the current thread the mutex */
+	else
+		mtx->km_holder = curthr;
         return 0;
 }
 
@@ -58,5 +80,10 @@ kmutex_lock_cancellable(kmutex_t *mtx)
 void
 kmutex_unlock(kmutex_t *mtx)
 {
-        NOT_YET_IMPLEMENTED("PROCS: kmutex_unlock");
+	/* ensure the current thread owns the mutex */
+	KASSERT(mtx->km_holder == curthr);
+
+	/* wake up a thread and give it the mutex
+	 * or set holder to NULL if no thread is waiting */
+	mtx->km_holder = sched_wakeup_on(&mtx->km_waitq);
 }
