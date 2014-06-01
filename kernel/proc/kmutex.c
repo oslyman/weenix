@@ -58,8 +58,7 @@ kmutex_lock_cancellable(kmutex_t *mtx)
 		return sched_cancellable_sleep_on(&mtx->km_waitq);
 
 	/* give the current thread the mutex */
-	else
-		mtx->km_holder = curthr;
+	mtx->km_holder = curthr;
         return 0;
 }
 

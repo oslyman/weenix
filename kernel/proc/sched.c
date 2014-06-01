@@ -100,7 +100,14 @@ sched_queue_empty(ktqueue_t *q)
 void
 sched_sleep_on(ktqueue_t *q)
 {
-        NOT_YET_IMPLEMENTED("PROCS: sched_sleep_on");
+	/* update thread state */
+	curthr->kt_state = KT_SLEEP;
+
+	/* add to given queue */
+	ktqueue_enqueue(q, curthr);
+
+	/* yield the processor */
+	sched_switch();
 }
 
 
@@ -114,21 +121,41 @@ sched_sleep_on(ktqueue_t *q)
 int
 sched_cancellable_sleep_on(ktqueue_t *q)
 {
-        NOT_YET_IMPLEMENTED("PROCS: sched_cancellable_sleep_on");
+	/* update thread state */
+	curthr->kt_state = KT_SLEEP_CANCELLABLE;
+
+	/* add to given queue */
+	ktqueue_enqueue(q, curthr);
+
+	/* yield the processor */
+	sched_switch();
+
+	/* check to see if the sleep was cancelled */
+	if (curthr->kt_cancelled)
+		return -EINTR;
+
         return 0;
 }
 
 kthread_t *
 sched_wakeup_on(ktqueue_t *q)
 {
-        NOT_YET_IMPLEMENTED("PROCS: sched_wakeup_on");
-        return NULL;
+	/* try to remove a thread from the queue */
+	kthread_t *thr = ktqueue_dequeue(q);
+
+	/* if an actual thread was removed, make it runnable */
+	if (thr != NULL)
+		sched_make_runnable(thr);
+
+        return thr;
 }
 
 void
 sched_broadcast_on(ktqueue_t *q)
 {
-        NOT_YET_IMPLEMENTED("PROCS: sched_broadcast_on");
+	/* wake up threads until the queue is empty */
+	while (q->tq_size)
+		sched_wakeup_on(q);
 }
 
 /*
@@ -143,7 +170,14 @@ sched_broadcast_on(ktqueue_t *q)
 void
 sched_cancel(struct kthread *kthr)
 {
-        NOT_YET_IMPLEMENTED("PROCS: sched_cancel");
+	/* set the flag */
+	kthr->kt_cancelled = 1;
+
+	/* remove from the queue if allowed */
+	if (kthr->kt_state == KT_SLEEP_CANCELLABLE) {
+		KASSERT(kthr->kt_wchan != NULL);
+		ktqueue_remove(kthr->kt_wchan, kthr);
+	}
 }
 
 /*
@@ -185,7 +219,27 @@ sched_cancel(struct kthread *kthr)
 void
 sched_switch(void)
 {
-        NOT_YET_IMPLEMENTED("PROCS: sched_switch");
+	/* store current IPL and mask all interrupts */
+	unint8_t cur_ipl = intr_getipl();
+	intr_setipl(IPL_HIGH);
+
+	/* if there are no threads to run, unmask interrupts
+	 * to prevent deadlocks */
+	while (!kt_runq.tq_size) {
+		intr_setipl(IPL_LOW);
+		intr_setipl(IPL_HIGH);
+	}
+
+	/* get the new thread */
+	kthread_t *new_thr = ktqueue_dequeue(&kt_runq);
+
+	/* set the global variables */
+	/* TODO IS THIS SUFFICIENT? */
+	curthr = new_thr;
+	curproc = new_thr->kt_proc;
+
+	/* restore the new process's IPL */
+	intr_setipl(cur_ipl);
 }
 
 /*
@@ -204,5 +258,13 @@ sched_switch(void)
 void
 sched_make_runnable(kthread_t *thr)
 {
-        NOT_YET_IMPLEMENTED("PROCS: sched_make_runnable");
+	/* store current IPL and mask all interrupts */
+	uint8_t cur_ipl = intr_getipl();
+	intr_setipl(IPL_HIGH);
+
+	/* add thread to the run queue */
+	ktqueue_enqueue(&kt_runq, thr);
+
+	/* restore the IPL */
+	intr_setipl(cur_ipl);
 }
