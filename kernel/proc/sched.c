@@ -233,8 +233,10 @@ sched_switch(void)
 	/* get the new thread */
 	kthread_t *new_thr = ktqueue_dequeue(&kt_runq);
 
+	/* switch the contexts */
+	context_switch(&curthr->kt_ctx, &new_thr->kt_ctx);
+
 	/* set the global variables */
-	/* TODO IS THIS SUFFICIENT? */
 	curthr = new_thr;
 	curproc = new_thr->kt_proc;
 
