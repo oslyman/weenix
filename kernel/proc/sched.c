@@ -264,8 +264,9 @@ sched_make_runnable(kthread_t *thr)
 	uint8_t cur_ipl = intr_getipl();
 	intr_setipl(IPL_HIGH);
 
-	/* add thread to the run queue */
+	/* add thread to the run queue and mark as such */
 	ktqueue_enqueue(&kt_runq, thr);
+	thr->kt_state = KT_RUN;
 
 	/* restore the IPL */
 	intr_setipl(cur_ipl);

@@ -74,8 +74,33 @@ free_stack(char *stack)
 kthread_t *
 kthread_create(struct proc *p, kthread_func_t func, long arg1, void *arg2)
 {
-        NOT_YET_IMPLEMENTED("PROCS: kthread_create");
-        return NULL;
+	/* allocate a new kthread */
+	kthread_t *new_thr = (kthread_t *) slab_obj_alloc(kthread_allocator);
+
+	/* initialize the stack */
+	new_thr->kt_kstack = alloc_stack();
+
+	/* initialize the context */
+	context_setup(&new_thr->kt_ctx, func, arg1, arg2, new_thr->kt_kstack, DEFAULT_STACK_SIZE, p->p_pagedir);
+	
+	/* set fields to default values */
+	new_thr->kt_retval = NULL;
+	new_thr->kt_errno = 0;
+	new_thr->kt_proc = p;
+	new_thr->kt_cancelled = 0;
+	new_thr->kt_wchan = NULL;
+	new_thr->kt_state = KT_NO_STATE;
+	list_link_init(&new_thr->kt_qlink);
+	list_link_init(&new_thr->kt_plink);
+#ifdef __MTP__
+	new_thr->kt_detached = 0;
+	list_init(&new_thr->kt_joinq);
+#endif
+
+	/* make the thread runnable */
+	sched_make_runnable(new_thr);
+
+        return new_thr;
 }
 
 void
@@ -103,7 +128,19 @@ kthread_destroy(kthread_t *t)
 void
 kthread_cancel(kthread_t *kthr, void *retval)
 {
-        NOT_YET_IMPLEMENTED("PROCS: kthread_cancel");
+	/* if the thread to cancel is the current thread, exit */
+	if (curthr == kthr) 
+		return kthread_exit(retval);
+
+	KASSERT(kthr->kt_state == KT_SLEEP || kthr->kt_state == KT_SLEEP_CANCELLABLE);
+
+	/* set the appropriate fields */
+	sched_cancel(kthr);
+	kthr->kt_retval = retval;
+
+	/* wake up thread if sleep is cancellable */
+	if (kthr->kt_state == KT_SLEEP_CANCELLABLE)
+		sched_make_runnable(kthr);
 }
 
 /*
@@ -121,7 +158,11 @@ kthread_cancel(kthread_t *kthr, void *retval)
 void
 kthread_exit(void *retval)
 {
-        NOT_YET_IMPLEMENTED("PROCS: kthread_exit");
+	/* update retval */
+	curthr->kt_retval = retval;
+
+	/* inform the process */
+	proc_thread_exited(retval);
 }
 
 /*
